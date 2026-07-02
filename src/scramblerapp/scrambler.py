@@ -40,44 +40,6 @@ class Scrambler:
 		random_second = randrange(int_delta)
 		return str(start + timedelta(seconds=random_second))
 
-	def timetravel(self, path: str) -> dict:
-		ppath = Crawler.escape(Crawler.posixize(path))
-		command = shlex.split('touch -d "{t}" {p}'.format(t=self.random_time(),p=ppath))
-		process = subprocess.run(command,
-					stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-
-		returncode = process.returncode
-
-		if returncode == 0:
-			return {'status': 200, 'message': 'Timetravelled: ' + str(path)}
-		else:
-			return {'status': 400, 'message': 'Error timetravelling: ' + str(path)}
-
-	def timetravel_files(self, path: str,
-						extension: Union[str, Type[None]] = None) -> dict:
-		files = Crawler.get_files(path, extension=extension)
-
-		if len(files) <= 0:
-			return {'status': 400, 'message': 'Error timetravelling: no files found.', 'output': []}
-
-		output = [self.timetravel(f)['message'] for f in files]
-		return {'status': 200, 'message': 'Timetravel files complete.', 'output': output}
-
-	def timetravel_folders(self, path: str) -> dict:
-		folders = Crawler.get_folders(path)
-
-		if exists(path) != True:
-			return {'status': 400, 'message': 'Error timetravelling: no directory found.', 'output': []}
-
-		if len(folders) <= 0:
-			output = ['No folders found to timetravel, no action taken.']
-		else:
-			output = [self.timetravel(folder)['message'] for folder in folders]
-
-		output.append(self.timetravel(path)['message'])
-
-		return {'status': 200, 'message': 'Timetravel folders complete.', 'output': output}
-
 	def encrypt_msg(self, password: str, message: str, decrypt: bool = False) -> dict:
 		data = {'format': 'text', 'input': message, 'outpath': None}
 		result = ossl.encrypt(password, data, decrypt)
@@ -126,8 +88,6 @@ class Scrambler:
 				pass
 			return response
 
-		self.timetravel(outpath)
-
 		if keep_org == True:
 			result['status'] = response['status']
 			result['message'] = response['message'] + ' (original retained).'
@@ -152,12 +112,6 @@ class Scrambler:
 		output = [self.encrypt_file(password,filepath,decrypt=decrypt,
 					keep_org=keep_org,naked=naked)['message'] for filepath in filepaths]
 
-		timetravel = self.timetravel_folders(wd)
-		if timetravel['status'] != 200 or len(timetravel['output']) == 0:
-			output.append('Error timetravelling folders, timetravelling skipped.')
-		else:
-			for o in timetravel['output']: output.append(o)
-
 		return {'status': 200, 'message': 'Encrypt all files complete.', 'output': output}
 
 class ScramblerGUI:
@@ -175,7 +129,7 @@ class ScramblerGUI:
 		print('version: ' + self.instance.version_text)
 		print(' ')
 		print('What would you like to do?')
-		print('(s) Set Dir, (e) Encrypt, (d) Decrypt, (t) Timetravel, (q) Quit')
+		print('(s) Set Dir, (e) Encrypt, (d) Decrypt, (q) Quit')
 
 	def comingsoon(self):
 		cmd.clear()
@@ -209,46 +163,6 @@ class ScramblerGUI:
 		print(setwd['message'])
 		return
 
-	def option_t(self):
-		cmd.clear()
-		if self.instance.wd == None:
-			print('Error: No working directory set. Please set working directory first.'); return
-
-		print('Warning: You are about to timetravel all files and folders in the following directory and its subdirectories.')
-		print('Timetravel will alter the metadata to a scrambled date/time in the past of everything in:')
-		print(self.instance.wd)
-		print(' ')
-		print('You may specify a file type. Leaving blank will default to .txt files.')
-		print('Use * for all files regardless of type (this can be dangerous).')
-		print(' ')
-		raw_extension = input('Specify a file type [Optional]: ')
-		extension = FileModder.format_ext(raw_extension, ifblank='.txt')
-		print(' ')
-		if extension == None:
-			confirm = input('Are you sure you want to timetravel all folders and files of all types [y/n]: ')
-		else:
-			confirm = input('Are you sure you want to timetravel all folders and files with extension {} [y/n]: '.format(extension))
-		cmd.clear()
-		if confirm != 'y': print('Exited, no action taken.'); return
-		if isdir(self.instance.wd) != True: print('Invalid path, no action taken.'); return
-
-		print('Timetravel started...')
-		tt_files = self.scrambler.timetravel_files(self.instance.wd, extension=extension)
-		if tt_files['status'] != 200 or len(tt_files['output']) == 0:
-			print('No files found to timetravel, no action taken.')
-		else:
-			for f in tt_files['output']: print(f)
-
-		tt_folders = self.scrambler.timetravel_folders(self.instance.wd)
-		if tt_folders['status'] != 200 or len(tt_folders['output']) == 0:
-			print('No folders found to timetravel, no action taken.')
-		else:
-			for folder in tt_folders['output']: print(folder)
-
-		print(' ')
-		print('Timetravel complete.')
-		input(); cmd.clear(); return
-
 	def run(self):
 		cmd.clear()
 		self.splashscreen()
@@ -257,7 +171,7 @@ class ScramblerGUI:
 			self.optionscreen()
 			select = input()
 
-			if select not in ('pwd','ls','s','e','d','t','q'):
+			if select not in ('pwd','ls','s','e','d','q'):
 				#'(s) Set Dir, (e) Encrypt, (d) Decrypt, (t) Timetravel, (q) Quit'
 				cmd.clear(); print('Invalid selection. Try again.')
 
@@ -280,5 +194,3 @@ class ScramblerGUI:
 			if select == 'd':
 				self.encryptiongui.run(decrypt=True)
 
-			if select == 't':
-				self.option_t()
