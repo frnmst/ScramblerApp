@@ -37,6 +37,15 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 
+dependencies = [
+    "cmd2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+]
+
 [project.license]
 text = "MIT"
 
