@@ -35,10 +35,11 @@ classifiers = [
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 
 dependencies = [
-    "cmd2",
+    "cmd2>=4,<5",
+    "platformdirs>=4,<5"
 ]
 
 [project.optional-dependencies]
