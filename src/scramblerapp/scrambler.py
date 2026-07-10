@@ -141,6 +141,8 @@ class BaseMenu(cmd2.Cmd):
             if cmd_name not in self.my_commands:
                 self.hidden_commands.append(cmd_name)
 
+        self._from_home_menu = True
+
     def _clear_terminal(self):
         # Use 'cls' for Windows, 'clear' for Linux/macOS
         command = 'cls' if os.name == 'nt' else 'clear'
@@ -179,13 +181,13 @@ class BaseMenu(cmd2.Cmd):
 
     def postcmd(self, stop, line):
         """Re-print help menu after each command."""
-        if not stop:
-            self.read_input('\nPress Enter to continue...')
-            self.clear_and_show_help()
+        self.clear_and_show_help()
         return stop
 
     def default(self, statement):
         self.perror(f"Invalid selection: '{statement.command}'. Try again.")
+        if self._from_home_menu:
+            self.read_input('\nPress Enter to continue...')
 
 
 class SettingsSubMenu(BaseMenu):
@@ -202,6 +204,7 @@ class SettingsSubMenu(BaseMenu):
 
         self.prompt = 'settings > '
         self.working_directory = working_directory
+        self._from_home_menu = False
 
     def _change_suffix(self, encrypt: bool = True):
         adjective: str = 'decrypt'
@@ -229,9 +232,16 @@ class SettingsSubMenu(BaseMenu):
             else:
                 self.perror(f'error saving settings:\n  {message}')
 
+    def postcmd(self, stop, line):
+        if stop:
+            return True
+
+        self.read_input('\nPress Enter to continue...')
+        self.clear_and_show_help()
+        return stop
+
     def do_b(self, args):
         """Go back to the Home menu."""
-        self.psuccess('Returning to main menu...')
         return True
 
     def do_q(self, args):
@@ -244,7 +254,6 @@ class SettingsSubMenu(BaseMenu):
 
     def do_p(self, args):
         """Use Python Cryptography library."""
-        self.poutput('DUMMY select cryptography, exclude OpenSSL...')
 
     def do_a(self, args):
         """About."""
@@ -291,10 +300,18 @@ class CryptoSubMenu(BaseMenu):
             self.prompt = 'decrypt > '
 
         self.encrypt = encrypt
+        self._from_home_menu = False
+
+    def postcmd(self, stop, line):
+        if stop:
+            return True
+
+        self.read_input('\nPress Enter to continue...')
+        self.clear_and_show_help()
+        return stop
 
     def do_b(self, args):
         """Go back to the Home menu."""
-        self.psuccess('Returning to main menu...')
         return True
 
     def do_q(self, args):
