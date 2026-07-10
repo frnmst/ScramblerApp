@@ -175,6 +175,20 @@ class BaseMenu(cmd2.Cmd):
         self.poutput(f' {self.working_directory}')
         self.poutput(menu_closer_len * '=')
 
+    def onecmd_plus_hooks(self, line: str, *args, **kwargs) -> bool:
+        """CLI Entry point."""
+        # See
+        # https://cmd2.readthedocs.io/en/latest/api/cmd/#cmd2.Cmd.onecmd_plus_hooks
+        if not line.strip():
+            # User did not type a command: clear the terminal
+            self.clear_and_show_help()
+
+            # Always process commands, do not quit.
+            return False
+
+        # Normal execution.
+        return super().onecmd_plus_hooks(line, *args, **kwargs)
+
     def do_help(self, args):
         """Show available commands and descriptions."""
         self.clear_and_show_help()
