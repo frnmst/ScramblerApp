@@ -216,7 +216,7 @@ class SettingsSubMenu(BaseMenu):
             scrambler=scrambler,
         )
 
-        self.prompt = 'settings > '
+        self.prompt = '> '
         self.working_directory = working_directory
         self._from_home_menu = False
 
@@ -305,14 +305,13 @@ class CryptoSubMenu(BaseMenu):
             self.do_d.__func__.__doc__ = 'Encrypt directory.'
             self.do_f.__func__.__doc__ = 'Encrypt file.'
             self.do_m.__func__.__doc__ = 'Encrypt message.'
-            self.prompt = 'encrypt > '
         else:
             self.do_c.__func__.__doc__ = 'Decrypt dataframe columns.'
             self.do_d.__func__.__doc__ = 'Decrypt directory.'
             self.do_f.__func__.__doc__ = 'Decrypt file.'
             self.do_m.__func__.__doc__ = 'Decrypt message.'
-            self.prompt = 'decrypt > '
 
+        self.prompt = '> '
         self.encrypt = encrypt
         self._from_home_menu = False
 
@@ -381,7 +380,7 @@ class ScramblerAppHome(BaseMenu):
             allowed_commands={'s', 'e', 'd', 'q', 'cd', 'help'},
             scrambler=scrambler,
         )
-        self.prompt = 'command > '
+        self.prompt = '> '
         self.working_directory = pathlib.Path.cwd()
         self.clear_and_show_help()
 
