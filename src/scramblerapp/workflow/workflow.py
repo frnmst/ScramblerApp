@@ -17,7 +17,9 @@ class Workflow:
 
     def validate_password(self) -> str:
         done: bool = False
-        while not done:
+        attempts: int = 0
+        max_attempts: int = 1
+        while not done and attempts <= max_attempts:
             prompt_msg = 'Password (>10 chars required): ' if self.encrypt else 'Decryption Password: '
             pwd = getpass.getpass(prompt_msg)
 
@@ -28,12 +30,17 @@ class Workflow:
                 self.menu.perror(
                     'Error: Password must be strictly greater than 10 characters.'
                 )
+                attempts += 1
 
             elif self.encrypt:
                 confirm_pwd = getpass.getpass('Confirm Password: ')
                 if pwd != confirm_pwd:
                     self.menu.perror(
                         'Error: Passwords do not match. Please try again.')
+                    attempts += 1
+
+                    # Reset password if they do not match.
+                    pwd = ''
                 else:
                     done = True
 
