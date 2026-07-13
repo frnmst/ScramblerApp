@@ -30,6 +30,7 @@ import sys
 import cmd2
 from platformdirs import PlatformDirs
 
+from .utils.commoncmd import CommonCmd
 from .utils.encryption import OpenSSLEncyptor
 from .workflow import workflow
 
@@ -127,7 +128,11 @@ class Instance:
 
 class BaseMenu(cmd2.Cmd):
 
-    def __init__(self, allowed_commands, scrambler):
+    def __init__(self,
+                 allowed_commands,
+                 scrambler,
+                 submenu_type: str,
+                 commands_that_clear_screen: list[str] = []):
         super().__init__(include_py=False, include_ipy=False)
         self.my_commands = allowed_commands
 
@@ -142,6 +147,8 @@ class BaseMenu(cmd2.Cmd):
                 self.hidden_commands.append(cmd_name)
 
         self._from_home_menu = True
+        self.submenu_type: str = submenu_type
+        self.commands_that_clear_screen: list[str] = commands_that_clear_screen
 
     def _clear_terminal(self):
         # Use 'cls' for Windows, 'clear' for Linux/macOS
@@ -151,29 +158,53 @@ class BaseMenu(cmd2.Cmd):
         # ANSI code alternative
         # self.poutput('\x1b[H\x1b[2J', end='')
 
-    def clear_and_show_help(self):
-        menu_closer_len: int = 8 + len(self.__class__.__name__)
+    def precmd(self, line):
+        sanitized: str = line.command.strip()
+        command: str = sanitized.split()[0] if sanitized else ''
 
+        if command in self.commands_that_clear_screen:
+            self._clear_terminal()
+
+        # precmd must return the line to pass it to the command executor.
+        return line
+
+    def clear_and_show_help(self,
+                            menu_name: str = f'Scrambler App',
+                            question: str = f'What would you like to do?'):
         self._clear_terminal()
 
-        self.poutput(f"=== {self.__class__.__name__} ===")
-        self.poutput('Available commands:')
+        self.poutput(f'=== {menu_name} ===')
+        self.poutput()
 
-        for cmd_name in sorted(self.my_commands):
-            if cmd_name == 'help':
-                continue
-            func = getattr(self, f"do_{cmd_name}")
-            # Read help from docstrings.
-            self.poutput(f'  {cmd_name:<5} - {func.__doc__}')
+        if self.submenu_type == 'settings':
+            # Use specific layout.
+            self.poutput(f'Current Directory: {self.working_directory}')
+            func = getattr(self, f'do_s')
+            self.poutput(f'(s) {func.__doc__}')
+
+            self.poutput()
+            self.poutput(f'Selected Algorithm: {self.instance.version_text}')
+            func_o = getattr(self, f'do_o')
+            func_p = getattr(self, f'do_p')
+            self.poutput(
+                f'(o) {self.instance.version_text} (p) Python Cryptography')
+
+            self.poutput()
+            self.poutput(f'Learn more')
+            func = getattr(self, f'do_a')
+            self.poutput(f'(a) {func.__doc__}')
+
+        else:
+            self.poutput(question)
+
+            for cmd_name in self.my_commands:
+                if cmd_name == 'help':
+                    continue
+                func = getattr(self, f'do_{cmd_name}')
+                # Read help from docstrings.
+                self.poutput(f'{"(" + cmd_name + ")":<6} {func.__doc__}')
 
         self.poutput()
-        self.poutput(f'Available crypto suites:')
-        self.poutput(f' [*]      {self.instance.version_text}')
-        self.poutput(f' [ ]      Python Cryptography')
-        self.poutput()
-        self.poutput(f'Current working directory:')
-        self.poutput(f' {self.working_directory}')
-        self.poutput(menu_closer_len * '=')
 
     def onecmd_plus_hooks(self, line: str, *args, **kwargs) -> bool:
         """CLI Entry point."""
@@ -208,17 +239,22 @@ class SettingsSubMenu(BaseMenu):
 
     def __init__(self,
                  scrambler,
+                 parent,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
-        super().__init__(
-            allowed_commands={
-                'b', 'q', 'o', 'p', 'es', 'ds', 'd', 'a', 'help'
-            },
-            scrambler=scrambler,
-        )
+        super().__init__(allowed_commands=[
+            'b', 'q', 'o', 'p', 'es', 'ds', 'd', 'a', 'help', 's'
+        ],
+                         scrambler=scrambler,
+                         submenu_type='settings',
+                         commands_that_clear_screen=['a'])
 
         self.prompt = '> '
         self.working_directory = working_directory
+        self.parent = parent
         self._from_home_menu = False
+
+    def clear_and_show_help(self):
+        super().clear_and_show_help('Settings')
 
     def _change_suffix(self, encrypt: bool = True):
         adjective: str = 'decrypt'
@@ -262,6 +298,50 @@ class SettingsSubMenu(BaseMenu):
         """Go back to the Home menu."""
         return self.do_b(args)
 
+    def do_s(self, args: str):
+        """Set Directory"""
+        path = args.strip() if args else ''
+
+        if not path:
+            self.pwarning(
+                'HINT: Press\n  <TAB> to browse and autocomplete\n  "../" + <TAB> to browse directories one level up\n  "." to select the current directory'
+            )
+            try:
+                path = self.read_input(
+                    prompt='Select a new working directory: ',
+                    completer=self.complete_s)
+            except (EOFError, KeyboardInterrupt):
+                self.pwarning('\nAborted.')
+                return
+
+        path = path.strip()
+        if not path:
+            return
+
+        new_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
+
+        if not new_path.exists():
+            self.perror(f"Error: Path '{new_path}' does not exists.")
+        elif not new_path.is_dir():
+            self.perror(f"Error: '{new_path}' is not a directory")
+        else:
+            self.working_directory = new_path
+            os.chdir(str(new_path))
+
+        if self.parent:
+            self.parent.working_directory = new_path
+
+    def complete_s(self, *args, **kwargs):
+        """Only show directories."""
+        text, line, begidx, endidx = args[-4:]
+
+        directory_filter = lambda p: pathlib.Path(p).is_dir()
+        return self.path_complete(text,
+                                  line,
+                                  begidx,
+                                  endidx,
+                                  path_filter=directory_filter)
+
     def do_o(self, args):
         """Use system's OpenSSL/LibreSSL binary."""
         self.poutput('DUMMY select OpenSSL, exclude Cryptography...')
@@ -270,7 +350,7 @@ class SettingsSubMenu(BaseMenu):
         """Use Python Cryptography library."""
 
     def do_a(self, args):
-        """About."""
+        """About"""
         self.poutput('DUMMY about, just print on screen...')
 
     def do_d(self, args):
@@ -293,9 +373,9 @@ class CryptoSubMenu(BaseMenu):
                  encrypt: bool = True,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
         super().__init__(
-            allowed_commands={'c', 'b', 'm', 'q', 'f', 'd', 'help'},
+            allowed_commands=['c', 'b', 'm', 'q', 'f', 'd', 'help'],
             scrambler=scrambler,
-        )
+            submenu_type='encrypt' if encrypt else 'decrypt')
 
         self.working_directory = working_directory
 
@@ -314,6 +394,9 @@ class CryptoSubMenu(BaseMenu):
         self.prompt = '> '
         self.encrypt = encrypt
         self._from_home_menu = False
+
+    def clear_and_show_help(self):
+        super().clear_and_show_help('Scrambler App')
 
     def postcmd(self, stop, line):
         if stop:
@@ -377,22 +460,42 @@ class ScramblerAppHome(BaseMenu):
 
     def __init__(self, scrambler):
         super().__init__(
-            allowed_commands={'s', 'e', 'd', 'q', 'cd', 'help'},
+            allowed_commands=['e', 'd', 'ls', 'pwd', 's', 'q', 'help'],
             scrambler=scrambler,
-        )
+            submenu_type='home',
+            commands_that_clear_screen=['pwd', 'ls'])
         self.prompt = '> '
         self.working_directory = pathlib.Path.cwd()
         self.clear_and_show_help()
+        self.commands_that_clear_screen: list[str] = ['pwd', 'ls']
+
+    def clear_and_show_help(self):
+        super().clear_and_show_help('Scrambler App')
 
     def do_q(self, args):
-        """Quit the application."""
+        """Quit"""
         self.psuccess('Goodbye!')
         return True
 
+    def do_pwd(self, args):
+        """Show current directory"""
+        self.poutput(f'Current directory:')
+        self.poutput()
+        self.poutput(f'{self.working_directory}')
+        self.read_input('\nPress Enter to continue...')
+
+    def do_ls(self, args):
+        """List files"""
+        self.poutput(f'Directory listing:')
+        self.poutput()
+        [self.poutput(l) for l in CommonCmd.ls(self.working_directory)]
+        self.read_input('\nPress Enter to continue...')
+
     def do_s(self, args):
-        """Open the settings sub-menu."""
+        """Settings"""
         sub_menu = SettingsSubMenu(
             scrambler=self.scrambler,
+            parent=self,
             working_directory=self.working_directory,
         )
 
@@ -400,49 +503,8 @@ class ScramblerAppHome(BaseMenu):
         # Don't exit this sub-menu unless the user types 'b' (back).
         sub_menu.cmdloop()
 
-    def do_cd(self, args: str):
-        """Set working directory."""
-        path = args.strip() if args else ''
-
-        if not path:
-            self.pwarning(
-                'HINT: Press\n  <TAB> to browse and autocomplete\n  "../" + <TAB> to browse directories one level up\n  "." to select the current directory'
-            )
-            try:
-                path = self.read_input(
-                    prompt='Select a new working directory: ',
-                    completer=self.complete_cd)
-            except (EOFError, KeyboardInterrupt):
-                self.pwarning('\nAborted.')
-                return
-
-        path = path.strip()
-        if not path:
-            return
-
-        new_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
-
-        if not new_path.exists():
-            self.perror(f"Error: Path '{new_path}' does not exists.")
-        elif not new_path.is_dir():
-            self.perror(f"Error: '{new_path}' is not a directory")
-        else:
-            self.working_directory = new_path
-            os.chdir(str(new_path))
-
-    def complete_cd(self, *args, **kwargs):
-        """Only show directories."""
-        text, line, begidx, endidx = args[-4:]
-
-        directory_filter = lambda p: pathlib.Path(p).is_dir()
-        return self.path_complete(text,
-                                  line,
-                                  begidx,
-                                  endidx,
-                                  path_filter=directory_filter)
-
     def do_e(self, args):
-        """Open the encryption sub-menu."""
+        """Encrypt"""
         sub_menu = CryptoSubMenu(
             scrambler=self.scrambler,
             encrypt=True,
@@ -454,7 +516,7 @@ class ScramblerAppHome(BaseMenu):
         sub_menu.cmdloop()
 
     def do_d(self, args):
-        """Open the decryption sub-menu."""
+        """Decrypt"""
         sub_menu = CryptoSubMenu(
             scrambler=self.scrambler,
             encrypt=False,
