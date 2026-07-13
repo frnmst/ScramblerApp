@@ -190,6 +190,16 @@ class BaseMenu(cmd2.Cmd):
                 f'(o) {self.instance.version_text} (p) Python Cryptography')
 
             self.poutput()
+            self.poutput(f'Encrypted File Suffix:')
+            func_es = getattr(self, f'do_es')
+            self.poutput(f'(es) {func_es.__doc__}')
+
+            self.poutput()
+            self.poutput(f'Decrypted File Suffix:')
+            func_ds = getattr(self, f'do_ds')
+            self.poutput(f'(ds) {func_ds.__doc__}')
+
+            self.poutput()
             self.poutput(f'Learn more')
             func = getattr(self, f'do_a')
             self.poutput(f'(a) {func.__doc__}')
@@ -242,7 +252,7 @@ class SettingsSubMenu(BaseMenu):
                  parent,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
         super().__init__(allowed_commands=[
-            'b', 'q', 'o', 'p', 'es', 'ds', 'd', 'a', 'help', 's'
+            'b', 'q', 'o', 'p', 'es', 'ds', 'a', 'help', 's'
         ],
                          scrambler=scrambler,
                          submenu_type='settings',
@@ -266,7 +276,8 @@ class SettingsSubMenu(BaseMenu):
         if suffix:
             if not self.instance._is_valid_file_suffix(suffix):
                 self.perror(
-                    f'"{suffix}" is not a valid {adjective}ed file suffix')
+                    f'error: "{suffix}" is not a valid {adjective}ed file suffix'
+                )
                 return
 
             if encrypt:
@@ -281,6 +292,9 @@ class SettingsSubMenu(BaseMenu):
                 self.psuccess('settings saved')
             else:
                 self.perror(f'error saving settings:\n  {message}')
+        else:
+            self.perror('error: suffix cannot be empty')
+            return
 
     def postcmd(self, stop, line):
         if stop:
@@ -353,16 +367,12 @@ class SettingsSubMenu(BaseMenu):
         """About"""
         self.poutput('DUMMY about, just print on screen...')
 
-    def do_d(self, args):
-        """Directory depth."""
-        self.poutput('Must be an int >= 0')
-
     def do_ds(self, args):
-        """Change decrypted file suffix."""
+        """Set decrypted suffix"""
         self._change_suffix(encrypt=False)
 
     def do_es(self, args):
-        """Change encrypted file suffix."""
+        """Set encrypted suffix"""
         self._change_suffix(encrypt=True)
 
 
