@@ -3,8 +3,6 @@ import pathlib
 import re
 from typing import Type, Union
 
-import cmd2
-
 from ..dircrawler.filemodder import FileModder
 
 
@@ -12,8 +10,10 @@ class Workflow:
 
     def __init__(self, menu_instance):
         self.menu = menu_instance
-        self.encrypt = self.menu.encrypt
-        self.keyword = 'Encrypt' if self.encrypt else 'Decrypt'
+        self.encrypt: bool = self.menu.encrypt
+        self.keyword: str = 'Encrypt' if self.encrypt else 'Decrypt'
+        self.crypto_suite_string: str = self.crypto_suite_mappings(
+            self.menu.instance.raw)
 
     def validate_password(self) -> str:
         done: bool = False
@@ -59,6 +59,19 @@ class Workflow:
         else:
             self.menu.perror('Operation cancelled due to password failure.')
             return ''
+
+    def crypto_suite_mappings(self, suite: dict[str]) -> str:
+        """Map raw engine and version to uniform short outputs."""
+        start: str
+        match suite['engine']:
+            case 'openssl':
+                start = 'ossl'
+            case 'libressl':
+                start = 'lssl'
+            case 'cryptography':
+                start = 'pycrypt'
+
+        return '.'.join([start, suite['version']])
 
 
 class FileCryptoWorkflow(Workflow):
@@ -256,8 +269,12 @@ class MessageCryptoWorkflow(Workflow):
             return match.group(1)
         return ''
 
-    def start(self):
-        self.menu.poutput(f"\n--- {self.keyword} message ---")
+    def start(self) -> bool:
+        self.menu.poutput(f'=== {self.keyword} ===')
+        self.menu.poutput()
+        self.menu.poutput(
+            f'What is the message you want to {self.keyword.lower()}?')
+        self.menu.poutput()
 
         message: str = self.menu.read_input('Input your message: ')
         if not message.strip():
@@ -270,23 +287,29 @@ class MessageCryptoWorkflow(Workflow):
                 self.menu.perror('Error: not a valid base64 payload')
                 return
 
+        self.menu.poutput()
         password: str = self.get_password()
         if not password:
             return
 
         result: dict = self.menu.scrambler.encrypt_msg(password, message,
                                                        not self.encrypt)
-        if result['status'] != 200:
+
+        self.menu._clear_terminal()
+        self.menu.poutput(f'=== {self.keyword} ===')
+        self.menu.poutput()
+
+        if result['status'] == 200:
+            self.menu.poutput('Operation completed.')
+        else:
             self.menu.perror(result['message'])
-            return
+            return False
 
         self.menu.poutput()
         if self.encrypt:
             self.menu.poutput(
-                f'[{self.menu.instance.raw["engine"]} {self.menu.instance.raw["version"]}]: {result["output"]}'
-            )
+                f'{self.crypto_suite_string}: {result["output"]}')
         else:
             self.menu.poutput(f'secret: {result["output"]}')
-        self.menu.poutput()
 
-        self.menu.poutput('Operation completed successfully.')
+        return True

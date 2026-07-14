@@ -382,24 +382,18 @@ class CryptoSubMenu(BaseMenu):
                  scrambler,
                  encrypt: bool = True,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
-        super().__init__(
-            allowed_commands=['c', 'b', 'm', 'q', 'f', 'd', 'help'],
-            scrambler=scrambler,
-            submenu_type='encrypt' if encrypt else 'decrypt')
+        super().__init__(allowed_commands=['1', '2', '3', '4'],
+                         scrambler=scrambler,
+                         submenu_type='encrypt' if encrypt else 'decrypt',
+                         commands_that_clear_screen=['1', '2', '3', '4'])
 
         self.working_directory = working_directory
 
-        if encrypt:
-            # Hack to override the docstring.
-            self.do_c.__func__.__doc__ = 'Encrypt dataframe columns.'
-            self.do_d.__func__.__doc__ = 'Encrypt directory.'
-            self.do_f.__func__.__doc__ = 'Encrypt file.'
-            self.do_m.__func__.__doc__ = 'Encrypt message.'
-        else:
-            self.do_c.__func__.__doc__ = 'Decrypt dataframe columns.'
-            self.do_d.__func__.__doc__ = 'Decrypt directory.'
-            self.do_f.__func__.__doc__ = 'Decrypt file.'
-            self.do_m.__func__.__doc__ = 'Decrypt message.'
+        # Hack to override the docstring.
+        self.do_c.__func__.__doc__ = 'Columns in a DataFrame'
+        self.do_d.__func__.__doc__ = 'All files'
+        self.do_f.__func__.__doc__ = 'A file'
+        self.do_m.__func__.__doc__ = 'A message'
 
         self.prompt = '> '
         self.encrypt = encrypt
@@ -410,6 +404,7 @@ class CryptoSubMenu(BaseMenu):
 
     def postcmd(self, stop, line):
         if stop:
+            self.read_input('\nPress Enter to continue...')
             return True
 
         self.read_input('\nPress Enter to continue...')
@@ -417,17 +412,13 @@ class CryptoSubMenu(BaseMenu):
         return stop
 
     def do_b(self, args):
-        """Go back to the Home menu."""
+        """Go back to the Home menu"""
         return True
-
-    def do_q(self, args):
-        """Go back to the Home menu."""
-        return self.do_b(args)
 
     def do_m(self, args):
         """Cipher/Decypher message."""
         wf = workflow.MessageCryptoWorkflow(menu_instance=self)
-        wf.start()
+        return wf.start()
 
     def do_f(self, args):
         """Cipher/Decypher files."""
@@ -463,6 +454,14 @@ class CryptoSubMenu(BaseMenu):
 
     def do_c(self, args):
         """Cipher/Decypher dataframe columns."""
+        self.pwarning('Feature coming soon')
+
+    # Aliases.
+    do_1 = do_m
+    do_2 = do_f
+    do_3 = do_d
+    do_4 = do_c
+    do_q = do_b
 
 
 class ScramblerAppHome(BaseMenu):
