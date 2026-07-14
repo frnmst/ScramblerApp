@@ -12,8 +12,6 @@ class Workflow:
         self.menu = menu_instance
         self.encrypt: bool = self.menu.encrypt
         self.keyword: str = 'Encrypt' if self.encrypt else 'Decrypt'
-        self.crypto_suite_string: str = self.crypto_suite_mappings(
-            self.menu.instance.raw)
 
     def validate_password(self) -> str:
         done: bool = False
@@ -60,18 +58,11 @@ class Workflow:
             self.menu.perror('Operation cancelled due to password failure.')
             return ''
 
-    def crypto_suite_mappings(self, suite: dict[str]) -> str:
-        """Map raw engine and version to uniform short outputs."""
-        start: str
-        match suite['engine']:
-            case 'openssl':
-                start = 'ossl'
-            case 'libressl':
-                start = 'lssl'
-            case 'cryptography':
-                start = 'pycrypt'
-
-        return '.'.join([start, suite['version']])
+    def print_option_heading(self, question_prefix: str):
+        self.menu.poutput(f'=== {self.keyword} ===')
+        self.menu.poutput()
+        self.menu.poutput(f'{question_prefix} {self.keyword.lower()}?')
+        self.menu.poutput()
 
 
 class FileCryptoWorkflow(Workflow):
@@ -128,31 +119,31 @@ class FileCryptoWorkflow(Workflow):
         # args contains the file or directory path.
         path: str = args.strip() if args else ''
 
+        self.print_option_heading(
+            question_prefix=f'Which {self.resource_type} do you want to')
+
         if not path:
-            self.menu.pwarning(
-                '[HINT]: press\n  <TAB> to browse and autocomplete\n  "../" + <TAB> to browse resources one level up\n  "." to select the current directory'
-            )
+            self.menu.pwarning('Press <TAB> to browse.')
+            self.menu.poutput()
             try:
                 # Interactive prompt.
-                path = self.menu.read_input(
-                    prompt=
-                    f"{self.keyword.lower()} [select {self.resource_type}] > ",
-                    completer=self.complete)
+                path = self.menu.read_input(prompt='> ',
+                                            completer=self.complete)
             except (EOFError, KeyboardInterrupt):
                 self.menu.perror('\nAborted.')
-                return
+                return False
 
         path = path.strip()
         if not path:
             self.menu.perror(
                 f"Error: Specify a valid path. Press TAB to browse.")
-            return
+            return False
 
         p_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
 
         if not p_path.exists():
             self.menu.perror(f'Error: Path "{p_path}" does not exists.')
-            return
+            return False
 
         password: str
         if self.resource_type == 'file':
@@ -173,7 +164,7 @@ class FileCryptoWorkflow(Workflow):
 
                     password = self.get_password()
                     if not password:
-                        return
+                        return False
 
                     result = self.menu.scrambler.encrypt_file(
                         password,
@@ -189,7 +180,7 @@ class FileCryptoWorkflow(Workflow):
                         self.menu.perror(result['message'])
                 else:
                     self.menu.pwarning('Exited, no action taken.')
-                    return
+                    return False
         elif self.resource_type == 'directory':
             if p_path.is_file():
                 self.menu.perror(
@@ -234,11 +225,13 @@ class FileCryptoWorkflow(Workflow):
                         self.menu.perror(result['message'])
                 else:
                     self.menu.pwarning('Exited, no action taken.')
-                    return
+                    return False
         else:
             self.menu.perror(
                 f'Error: unknown "{self.resource_type}" resource type')
-            return
+            return False
+
+        return True
 
     def complete(self, *args, **kwargs):
         text, line, begidx, endidx = args[-4:]
@@ -270,27 +263,24 @@ class MessageCryptoWorkflow(Workflow):
         return ''
 
     def start(self) -> bool:
-        self.menu.poutput(f'=== {self.keyword} ===')
-        self.menu.poutput()
-        self.menu.poutput(
-            f'What is the message you want to {self.keyword.lower()}?')
-        self.menu.poutput()
+        self.print_option_heading(
+            self, question_prefix='What is the message you want to')
 
         message: str = self.menu.read_input('Input your message: ')
         if not message.strip():
             self.menu.perror('Error: Message cannot be empty. Exited.')
-            return
+            return False
 
         if not self.encrypt:
             message = self._clean_base64_payload(message)
             if not message:
                 self.menu.perror('Error: not a valid base64 payload')
-                return
+                return False
 
         self.menu.poutput()
         password: str = self.get_password()
         if not password:
-            return
+            return False
 
         result: dict = self.menu.scrambler.encrypt_msg(password, message,
                                                        not self.encrypt)
@@ -308,7 +298,8 @@ class MessageCryptoWorkflow(Workflow):
         self.menu.poutput()
         if self.encrypt:
             self.menu.poutput(
-                f'{self.crypto_suite_string}: {result["output"]}')
+                f'{self.menu.instance.get_crypto_suite_mappings()}: {result["output"]}'
+            )
         else:
             self.menu.poutput(f'secret: {result["output"]}')
 

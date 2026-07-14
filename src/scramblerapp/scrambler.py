@@ -57,10 +57,26 @@ class Instance:
             print(f'Error: unable to load settings: {message}')
             sys.exit(1)
 
+    def get_crypto_suite_mappings(self, encrypt: bool = True) -> str:
+        """Map raw engine and version to uniform short outputs."""
+        start: str
+        if encrypt:
+            match self.raw['engine']:
+                case 'openssl':
+                    start = 'ossl'
+                case 'libressl':
+                    start = 'lssl'
+                case 'cryptography':
+                    start = 'pycrypt'
+
+            return '.'.join([start, self.raw['version']])
+        else:
+            return 'NAKED'
+
     def set_settings(self):
-        self.encrypted_file_suffix: str = f'{self.raw["engine"]}-{self.raw["version"].replace(".", "_")}-enc'
-        self.decrypted_file_suffix: str = f'NAKED'
-        self.directory_depth: int = 0
+        # Get defaults.
+        self.encrypted_file_suffix: str = self.get_crypto_suite_mappings(True)
+        self.decrypted_file_suffix: str = self.get_crypto_suite_mappings(False)
         self.crypto_backend: str = 'openssl'
 
     def _is_valid_file_suffix(self, suffix: str) -> bool:
@@ -86,8 +102,6 @@ class Instance:
                 payload: str = self.settings_file.read_text(encoding='utf-8')
                 data: dict[str] = json.loads(payload)
 
-                self.directory_depth = data.get('directory_depth',
-                                                self.directory_depth)
                 self.decrypted_file_suffix = data.get(
                     'decrypted_file_suffix', self.decrypted_file_suffix)
                 self.encrypted_file_suffix = data.get(
@@ -111,7 +125,6 @@ class Instance:
 
     def save_settings(self) -> [bool, str]:
         data: dict[str] = {
-            'directory_depth': self.directory_depth,
             'decrypted_file_suffix': self.decrypted_file_suffix,
             'encrypted_file_suffix': self.encrypted_file_suffix,
             'crypto_backend': self.crypto_backend,
@@ -391,7 +404,7 @@ class CryptoSubMenu(BaseMenu):
 
         # Hack to override the docstring.
         self.do_c.__func__.__doc__ = 'Columns in a DataFrame'
-        self.do_d.__func__.__doc__ = 'All files'
+        self.do_d.__func__.__doc__ = 'All files in directory'
         self.do_f.__func__.__doc__ = 'A file'
         self.do_m.__func__.__doc__ = 'A message'
 
@@ -400,11 +413,17 @@ class CryptoSubMenu(BaseMenu):
         self._from_home_menu = False
 
     def clear_and_show_help(self):
-        super().clear_and_show_help('Scrambler App')
+        super().clear_and_show_help(
+            menu_name='Encrypt' if self.encrypt else 'Decrypt',
+            question=
+            f'What would you like to {"encrypt" if self.encrypt else "decrypt"}?'
+        )
 
     def postcmd(self, stop, line):
         if stop:
-            self.read_input('\nPress Enter to continue...')
+            # Quit immediately if user wants to go back.
+            if line.command.strip() not in ['b', 'q']:
+                self.read_input('\nPress Enter to continue...')
             return True
 
         self.read_input('\nPress Enter to continue...')
@@ -426,7 +445,7 @@ class CryptoSubMenu(BaseMenu):
             menu_instance=self,
             resource_type='file',
             working_directory=self.working_directory)
-        wf.start(args)
+        return wf.start(args)
 
     def complete_f(self, text, line, begidx, endidx):
         """Autocomplete paths."""
@@ -442,7 +461,7 @@ class CryptoSubMenu(BaseMenu):
             menu_instance=self,
             resource_type='directory',
             working_directory=self.working_directory)
-        wf.start(args)
+        return wf.start(args)
 
     def complete_d(self, text, line, begidx, endidx):
         """Autocomplete paths."""
