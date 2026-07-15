@@ -209,7 +209,7 @@ class OpenSSLEncyptor:
             return result
         elif returncode == 0 and outpath != None:
             result['status'] = 200
-            result['message'] = '{}ed: '.format(
+            result['message'] = '{}ed File: '.format(
                 'Decrypt' if decrypt else 'Encrypt') + str(outpath)
             return result
         else:

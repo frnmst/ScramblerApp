@@ -58,9 +58,12 @@ class Workflow:
             self.menu.perror('Operation cancelled due to password failure.')
             return ''
 
-    def print_option_heading(self, question_prefix: str):
+    def print_option_title(self):
         self.menu.poutput(f'=== {self.keyword} ===')
         self.menu.poutput()
+
+    def print_option_heading(self, question_prefix: str):
+        self.print_option_title()
         self.menu.poutput(f'{question_prefix} {self.keyword.lower()}?')
         self.menu.poutput()
 
@@ -77,43 +80,110 @@ class FileCryptoWorkflow(Workflow):
         self.naked = True if (not self.encrypt
                               and self.resource_type == 'file') else False
 
+    def show_note_and_get_prompt(self, note: str, prompt: str) -> str:
+        self.menu.poutput(note)
+        self.menu.poutput()
+        value: str = self.menu.read_input(prompt).strip()
+        self.menu.poutput()
+
+        return value
+
     def get_destination_files_suffix(self) -> dict[list[str]]:
-        if self.encrypt:
-            self.menu.pwarning(
-                f'[NOTE]: new files will include this suffix:\n  {self.menu.instance.encrypted_file_suffix}'
-            )
-        else:
-            self.menu.pwarning(
-                f'[NOTE]: new files will include this suffix:\n  {self.menu.instance.decrypted_file_suffix}'
-            )
+        prefix: str = f'[NOTE]: By default, {self.keyword.lower()} will create {"a new file" if self.resource_type == "file" else "new files"} with "'
+        suffix: str = '" at the end. You may change this suffix.'
+        notice_prompt: str = ''.join([
+            prefix, self.menu.instance.encrypted_file_suffix if self.encrypt
+            else self.menu.instance.decrypted_file_suffix, suffix
+        ])
+
+        destination_file_suffix: str = self.show_note_and_get_prompt(
+            notice_prompt, 'Specify a different suffix [Optional]: ')
+
+        encrypt_suffix: str = self.menu.instance.encrypted_file_suffix
+        decrypt_suffix: str = self.menu.instance.decrypted_file_suffix
+
+        if destination_file_suffix:
+            if self.encrypt:
+                encrypt_suffix = destination_file_suffix
+            else:
+                decrypt_suffix = destination_file_suffix
 
         return {
-            'encrypt': [self.menu.instance.encrypted_file_suffix],
+            'encrypt': [encrypt_suffix],
             'decrypt': [
-                self.menu.instance.decrypted_file_suffix,
-                self.menu.instance.decrypted_file_suffix
+                decrypt_suffix,
+                decrypt_suffix,
             ],
         }
 
-    def filter_source_files_by_extension(self) -> Union[str, Type[None]]:
-        self.menu.pwarning(
-            f'You may specify a file type to {self.keyword.lower()}. Leave blank for default .txt files'
-        )
-        self.menu.pwarning(
-            f'Use * to {self.keyword.lower()} all files regardless of type (this can be dangerous)'
-        )
+    def filter_source_files_by_extension(self):
+        notice_prompt: str = f'[NOTE]: By default, this {self.keyword.lower()}s files with the ".txt" extension. You may change this to a different extension. Use "*" to decrypt all files regardless of extension (this can be dangerous).'
+        raw_extension: str = self.show_note_and_get_prompt(
+            notice_prompt, 'Specify a file type [Optional]: ')
 
-        raw_extension: str = self.menu.read_input(
-            'Filter files by extension [optional]: ')
         return FileModder.format_ext(raw_extension)
 
+    def filter_source_files_by_directory_depth(self) -> int:
+        notice_prompt: str = f'[NOTE]: By default, this {self.keyword.lower()}s files 1 subdirectory down from your root directory. You may change this to a depth of 0 to 3.'
+        depth_int: int = 1
+        depth: str = self.show_note_and_get_prompt(
+            notice_prompt, 'Specify a depth [Optional]: ')
+
+        try:
+            if not depth:
+                depth_int
+
+            depth_int = int(depth)
+            if depth_int < 0 or depth_int > 3:
+                raise ValueError
+        except ValueError as e:
+            depth_int = 1
+            self.menu.pwarning(
+                f'[NOTE]: Using default depth of {depth_int} as directory depth'
+            )
+            self.menu.poutput()
+
+        return depth_int
+
     def keep_original_files(self) -> bool:
+        resource_name: str = 'file' if self.resource_type == 'file' else 'files'
         delete_original_files: str = self.menu.read_input(
-            'Delete original files (Y/n)? ')
+            f'Type D to delete the original {resource_name} [Optional]: '
+        ).strip()
+
+        self.menu.poutput()
+
         keep_orig: bool = True
-        if delete_original_files in ['y', 'Y', '']:
-            keep_orig = False
+        if delete_original_files in ['D']:
+            delete_original_files = self.menu.read_input(
+                f'Are you sure you want to {self.keyword.lower()} the {resource_name} and DELETE the original (Y/n)? '
+            ).strip()
+            if delete_original_files in ['Y', 'y', '']:
+                keep_orig = False
+            else:
+                keep_orig = True
+        else:
+            preserve_original_files = self.menu.read_input(
+                f'Are you sure you want to {self.keyword.lower()} the {resource_name} and KEEP the original (Y/n)? '
+            ).strip()
+            if preserve_original_files in ['Y', 'y', '']:
+                keep_orig = True
+            else:
+                keep_orig = False
+
+        self.menu.poutput()
+
         return keep_orig
+
+    def show_directory_confirmation(self, dir_path: str):
+        self.menu._clear_terminal()
+        self.print_option_title()
+        self.menu.pwarning(
+            f'Warning: You are about to {self.keyword.lower()} all files in the following directory and its subdirectories:'
+        )
+        self.menu.poutput()
+        self.menu.poutput(f'{dir_path}')
+        self.menu.poutput()
 
     def start(self, args: str):
         # args contains the file or directory path.
@@ -133,6 +203,8 @@ class FileCryptoWorkflow(Workflow):
                 self.menu.perror('\nAborted.')
                 return False
 
+        self.menu.poutput()
+
         path = path.strip()
         if not path:
             self.menu.perror(
@@ -150,82 +222,76 @@ class FileCryptoWorkflow(Workflow):
             if p_path.is_dir():
                 self.menu.perror(
                     f'"{p_path}" is a directory. Select a file instead.')
-                return
+                return False
             elif p_path.is_file():
-                confirmation: str = self.menu.read_input(
-                    f'Are you sure you want to {self.keyword.lower()} file "{p_path}" (Y/n)? '
-                )
-                if confirmation in ['y', 'Y', '']:
-
-                    crypto_file_extensions = self.get_destination_files_suffix(
-                    )
-
-                    keep_orig: bool = self.keep_original_files()
-
-                    password = self.get_password()
-                    if not password:
-                        return False
-
-                    result = self.menu.scrambler.encrypt_file(
-                        password,
-                        str(p_path),
-                        decrypt=not self.encrypt,
-                        keep_org=keep_orig,
-                        naked=self.naked,
-                        tag_options=crypto_file_extensions,
-                    )
-                    if result['status'] == 200:
-                        self.menu.psuccess(result['message'])
-                    else:
-                        self.menu.perror(result['message'])
-                else:
-                    self.menu.pwarning('Exited, no action taken.')
-                    return False
-        elif self.resource_type == 'directory':
-            if p_path.is_file():
-                self.menu.perror(
-                    f'"{p_path}" is a file. Select a directory instead.')
-                return
-            elif p_path.is_dir():
-                extension = self.filter_source_files_by_extension()
-
-                # Tag options.
                 crypto_file_extensions = self.get_destination_files_suffix()
 
                 keep_orig: bool = self.keep_original_files()
 
-                if extension is None:
-                    confirmation_message = f'Are you sure you want to {self.keyword.lower()} all files of all types'
-                else:
-                    confirmation_message = f'Are you sure you want to {self.keyword.lower()} all files with extension {extension}'
-
-                confirmation_message = f'{confirmation_message} in "{p_path}" (Y/n)? '
-                confirmation = self.menu.read_input(confirmation_message)
-
-                if confirmation in ['y', 'Y', '']:
-                    password = self.get_password()
-                    if not password:
-                        return
-
-                    # Mock:
-                    #   result = {'status': 200, 'message': 'OK', 'output': ['ok 0', 'ok 1']}
-                    result = self.menu.scrambler.encrypt_all_files(
-                        password,
-                        str(p_path),
-                        decrypt=not self.encrypt,
-                        extension=extension,
-                        keep_org=keep_orig,
-                        naked=self.naked,
-                        tag_options=crypto_file_extensions,
-                    )
-                    if result['status'] == 200:
-                        for out in result['output']:
-                            self.menu.psuccess(out)
-                    else:
-                        self.menu.perror(result['message'])
-                else:
-                    self.menu.pwarning('Exited, no action taken.')
+                password = self.get_password()
+                if not password:
                     return False
+
+                result = self.menu.scrambler.encrypt_file(
+                    password,
+                    str(p_path),
+                    decrypt=not self.encrypt,
+                    keep_org=keep_orig,
+                    naked=self.naked,
+                    tag_options=crypto_file_extensions,
+                )
+
+                self.menu._clear_terminal()
+                self.print_option_title()
+                if result['status'] == 200:
+                    self.menu.psuccess('Operation completed.')
+                    self.menu.poutput()
+                    self.menu.poutput(result['message'])
+                else:
+                    self.menu.perror('Error.')
+                    self.menu.poutput()
+                    self.menu.poutput(result['message'])
+
+        elif self.resource_type == 'directory':
+            if p_path.is_file():
+                self.menu.perror(
+                    f'"{p_path}" is a file. Select a directory instead.')
+                return False
+            elif p_path.is_dir():
+                self.show_directory_confirmation(p_path)
+                crypto_file_extensions = self.get_destination_files_suffix()
+                extension = self.filter_source_files_by_extension()
+                depth: int = self.filter_source_files_by_directory_depth()
+                keep_orig: bool = self.keep_original_files()
+
+                password = self.get_password()
+                if not password:
+                    return False
+
+                # Mock:
+                #   result = {'status': 200, 'message': 'OK', 'output': ['ok 0', 'ok 1']}
+                result = self.menu.scrambler.encrypt_all_files(
+                    password,
+                    str(p_path),
+                    decrypt=not self.encrypt,
+                    extension=extension,
+                    keep_org=keep_orig,
+                    naked=self.naked,
+                    tag_options=crypto_file_extensions,
+                    depth=depth,
+                )
+
+                self.menu._clear_terminal()
+                self.print_option_title()
+                if result['status'] == 200:
+                    for out in result['output']:
+                        self.menu.psuccess(out)
+                        self.menu.poutput()
+                    self.menu.psuccess('Operation completed.')
+                else:
+                    self.menu.perror('Error.')
+                    self.menu.poutput()
+                    self.menu.poutput(result['message'])
         else:
             self.menu.perror(
                 f'Error: unknown "{self.resource_type}" resource type')

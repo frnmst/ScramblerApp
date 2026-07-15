@@ -269,7 +269,7 @@ class SettingsSubMenu(BaseMenu):
         ],
                          scrambler=scrambler,
                          submenu_type='settings',
-                         commands_that_clear_screen=['a'])
+                         commands_that_clear_screen=['a', 's'])
 
         self.prompt = '> '
         self.working_directory = working_directory
@@ -279,7 +279,7 @@ class SettingsSubMenu(BaseMenu):
     def clear_and_show_help(self):
         super().clear_and_show_help('Settings')
 
-    def _change_suffix(self, encrypt: bool = True):
+    def _change_suffix(self, encrypt: bool = True) -> bool:
         adjective: str = 'decrypt'
         if encrypt:
             adjective = 'encrypt'
@@ -291,7 +291,7 @@ class SettingsSubMenu(BaseMenu):
                 self.perror(
                     f'error: "{suffix}" is not a valid {adjective}ed file suffix'
                 )
-                return
+                return False
 
             if encrypt:
                 self.instance.encrypted_file_suffix = suffix
@@ -303,14 +303,19 @@ class SettingsSubMenu(BaseMenu):
             ok, message = self.instance.save_settings()
             if ok:
                 self.psuccess('settings saved')
+                return True
             else:
                 self.perror(f'error saving settings:\n  {message}')
+                return False
         else:
             self.perror('error: suffix cannot be empty')
-            return
+            return False
 
     def postcmd(self, stop, line):
         if stop:
+            # Quit immediately if user wants to go back.
+            if line.command.strip() not in ['b', 'q']:
+                self.read_input('\nPress Enter to continue...')
             return True
 
         self.read_input('\nPress Enter to continue...')
@@ -339,24 +344,28 @@ class SettingsSubMenu(BaseMenu):
                     completer=self.complete_s)
             except (EOFError, KeyboardInterrupt):
                 self.pwarning('\nAborted.')
-                return
+                return False
 
         path = path.strip()
         if not path:
-            return
+            return False
 
         new_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
 
         if not new_path.exists():
             self.perror(f"Error: Path '{new_path}' does not exists.")
+            return False
         elif not new_path.is_dir():
             self.perror(f"Error: '{new_path}' is not a directory")
+            return False
         else:
             self.working_directory = new_path
             os.chdir(str(new_path))
 
         if self.parent:
             self.parent.working_directory = new_path
+
+        return True
 
     def complete_s(self, *args, **kwargs):
         """Only show directories."""
@@ -372,13 +381,16 @@ class SettingsSubMenu(BaseMenu):
     def do_o(self, args):
         """Use system's OpenSSL/LibreSSL binary."""
         self.poutput('DUMMY select OpenSSL, exclude Cryptography...')
+        return True
 
     def do_p(self, args):
         """Use Python Cryptography library."""
+        return True
 
     def do_a(self, args):
         """About"""
         self.poutput('DUMMY about, just print on screen...')
+        return True
 
     def do_ds(self, args):
         """Set decrypted suffix"""

@@ -112,20 +112,19 @@ class Scrambler:
 
         return result
 
-    def encrypt_all_files(
-        self,
-        password: str,
-        wd: str,
-        extension: Union[str, Type[None]] = None,
-        decrypt: bool = False,
-        keep_org: bool = False,
-        naked: bool = False,
-        tag_options: dict[list[str]] = {
-            'encrypt': ['openssl-c'],
-            'decrypt': ['d', 'NAKED']
-        }
-    ) -> dict:
-        filepaths = Crawler.get_files(wd, extension=extension)
+    def encrypt_all_files(self,
+                          password: str,
+                          wd: str,
+                          extension: Union[str, Type[None]] = None,
+                          decrypt: bool = False,
+                          keep_org: bool = False,
+                          naked: bool = False,
+                          tag_options: dict[list[str]] = {
+                              'encrypt': ['openssl-c'],
+                              'decrypt': ['d', 'NAKED']
+                          },
+                          depth: int = 1) -> dict:
+        filepaths = Crawler.get_files(wd, extension=extension, depth=depth)
         if len(filepaths) <= 0:
             return {
                 'status': 400,
