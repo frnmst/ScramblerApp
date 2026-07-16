@@ -326,10 +326,6 @@ class SettingsSubMenu(BaseMenu):
         """Go back to the Home menu."""
         return True
 
-    def do_q(self, args):
-        """Go back to the Home menu."""
-        return self.do_b(args)
-
     def do_s(self, args: str):
         """Set Directory"""
         path = args.strip() if args else ''
@@ -399,6 +395,8 @@ class SettingsSubMenu(BaseMenu):
     def do_es(self, args):
         """Set encrypted suffix"""
         self._change_suffix(encrypt=True)
+
+    do_q = do_b
 
 
 class CryptoSubMenu(BaseMenu):

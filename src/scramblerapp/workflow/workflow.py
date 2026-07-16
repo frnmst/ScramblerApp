@@ -334,10 +334,10 @@ class MessageCryptoWorkflow(Workflow):
 
     def start(self) -> bool:
         self.print_option_heading(
-            self, question_prefix='What is the message you want to')
+            question_prefix='What is the message you want to')
 
-        message: str = self.menu.read_input('Input your message: ')
-        if not message.strip():
+        message: str = self.menu.read_input('Input your message: ').strip()
+        if not message:
             self.menu.perror('Error: Message cannot be empty. Exited.')
             return False
 
