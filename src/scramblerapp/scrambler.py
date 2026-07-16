@@ -30,6 +30,7 @@ import sys
 import cmd2
 from platformdirs import PlatformDirs
 
+from .utils.commoncmd import CommonCmd
 from .utils.encryption import OpenSSLEncyptor
 from .workflow import workflow
 
@@ -56,10 +57,26 @@ class Instance:
             print(f'Error: unable to load settings: {message}')
             sys.exit(1)
 
+    def get_crypto_suite_mappings(self, encrypt: bool = True) -> str:
+        """Map raw engine and version to uniform short outputs."""
+        start: str
+        if encrypt:
+            match self.raw['engine']:
+                case 'openssl':
+                    start = 'ossl'
+                case 'libressl':
+                    start = 'lssl'
+                case 'cryptography':
+                    start = 'pycrypt'
+
+            return '.'.join([start, self.raw['version']])
+        else:
+            return 'NAKED'
+
     def set_settings(self):
-        self.encrypted_file_suffix: str = f'{self.raw["engine"]}-{self.raw["version"].replace(".", "_")}-enc'
-        self.decrypted_file_suffix: str = f'NAKED'
-        self.directory_depth: int = 0
+        # Get defaults.
+        self.encrypted_file_suffix: str = self.get_crypto_suite_mappings(True)
+        self.decrypted_file_suffix: str = self.get_crypto_suite_mappings(False)
         self.crypto_backend: str = 'openssl'
 
     def _is_valid_file_suffix(self, suffix: str) -> bool:
@@ -85,8 +102,6 @@ class Instance:
                 payload: str = self.settings_file.read_text(encoding='utf-8')
                 data: dict[str] = json.loads(payload)
 
-                self.directory_depth = data.get('directory_depth',
-                                                self.directory_depth)
                 self.decrypted_file_suffix = data.get(
                     'decrypted_file_suffix', self.decrypted_file_suffix)
                 self.encrypted_file_suffix = data.get(
@@ -110,7 +125,6 @@ class Instance:
 
     def save_settings(self) -> [bool, str]:
         data: dict[str] = {
-            'directory_depth': self.directory_depth,
             'decrypted_file_suffix': self.decrypted_file_suffix,
             'encrypted_file_suffix': self.encrypted_file_suffix,
             'crypto_backend': self.crypto_backend,
@@ -127,7 +141,11 @@ class Instance:
 
 class BaseMenu(cmd2.Cmd):
 
-    def __init__(self, allowed_commands, scrambler):
+    def __init__(self,
+                 allowed_commands,
+                 scrambler,
+                 submenu_type: str,
+                 commands_that_clear_screen: list[str] = []):
         super().__init__(include_py=False, include_ipy=False)
         self.my_commands = allowed_commands
 
@@ -142,6 +160,8 @@ class BaseMenu(cmd2.Cmd):
                 self.hidden_commands.append(cmd_name)
 
         self._from_home_menu = True
+        self.submenu_type: str = submenu_type
+        self.commands_that_clear_screen: list[str] = commands_that_clear_screen
 
     def _clear_terminal(self):
         # Use 'cls' for Windows, 'clear' for Linux/macOS
@@ -151,29 +171,63 @@ class BaseMenu(cmd2.Cmd):
         # ANSI code alternative
         # self.poutput('\x1b[H\x1b[2J', end='')
 
-    def clear_and_show_help(self):
-        menu_closer_len: int = 8 + len(self.__class__.__name__)
+    def precmd(self, line):
+        sanitized: str = line.command.strip()
+        command: str = sanitized.split()[0] if sanitized else ''
 
+        if command in self.commands_that_clear_screen:
+            self._clear_terminal()
+
+        # precmd must return the line to pass it to the command executor.
+        return line
+
+    def clear_and_show_help(self,
+                            menu_name: str = f'Scrambler App',
+                            question: str = f'What would you like to do?'):
         self._clear_terminal()
 
-        self.poutput(f"=== {self.__class__.__name__} ===")
-        self.poutput('Available commands:')
+        self.poutput(f'=== {menu_name} ===')
+        self.poutput()
 
-        for cmd_name in sorted(self.my_commands):
-            if cmd_name == 'help':
-                continue
-            func = getattr(self, f"do_{cmd_name}")
-            # Read help from docstrings.
-            self.poutput(f'  {cmd_name:<5} - {func.__doc__}')
+        if self.submenu_type == 'settings':
+            # Use specific layout.
+            self.poutput(f'Current Directory: {self.working_directory}')
+            func = getattr(self, f'do_s')
+            self.poutput(f'(s) {func.__doc__}')
+
+            self.poutput()
+            self.poutput(f'Selected Algorithm: {self.instance.version_text}')
+            func_o = getattr(self, f'do_o')
+            func_p = getattr(self, f'do_p')
+            self.poutput(
+                f'(o) {self.instance.version_text} (p) Python Cryptography')
+
+            self.poutput()
+            self.poutput(f'Encrypted File Suffix:')
+            func_es = getattr(self, f'do_es')
+            self.poutput(f'(es) {func_es.__doc__}')
+
+            self.poutput()
+            self.poutput(f'Decrypted File Suffix:')
+            func_ds = getattr(self, f'do_ds')
+            self.poutput(f'(ds) {func_ds.__doc__}')
+
+            self.poutput()
+            self.poutput(f'Learn more')
+            func = getattr(self, f'do_a')
+            self.poutput(f'(a) {func.__doc__}')
+
+        else:
+            self.poutput(question)
+
+            for cmd_name in self.my_commands:
+                if cmd_name == 'help':
+                    continue
+                func = getattr(self, f'do_{cmd_name}')
+                # Read help from docstrings.
+                self.poutput(f'{"(" + cmd_name + ")":<6} {func.__doc__}')
 
         self.poutput()
-        self.poutput(f'Available crypto suites:')
-        self.poutput(f' [*]      {self.instance.version_text}')
-        self.poutput(f' [ ]      Python Cryptography')
-        self.poutput()
-        self.poutput(f'Current working directory:')
-        self.poutput(f' {self.working_directory}')
-        self.poutput(menu_closer_len * '=')
 
     def onecmd_plus_hooks(self, line: str, *args, **kwargs) -> bool:
         """CLI Entry point."""
@@ -208,19 +262,24 @@ class SettingsSubMenu(BaseMenu):
 
     def __init__(self,
                  scrambler,
+                 parent,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
-        super().__init__(
-            allowed_commands={
-                'b', 'q', 'o', 'p', 'es', 'ds', 'd', 'a', 'help'
-            },
-            scrambler=scrambler,
-        )
+        super().__init__(allowed_commands=[
+            'b', 'q', 'o', 'p', 'es', 'ds', 'a', 'help', 's'
+        ],
+                         scrambler=scrambler,
+                         submenu_type='settings',
+                         commands_that_clear_screen=['a', 's'])
 
         self.prompt = '> '
         self.working_directory = working_directory
+        self.parent = parent
         self._from_home_menu = False
 
-    def _change_suffix(self, encrypt: bool = True):
+    def clear_and_show_help(self):
+        super().clear_and_show_help('Settings')
+
+    def _change_suffix(self, encrypt: bool = True) -> bool:
         adjective: str = 'decrypt'
         if encrypt:
             adjective = 'encrypt'
@@ -230,8 +289,9 @@ class SettingsSubMenu(BaseMenu):
         if suffix:
             if not self.instance._is_valid_file_suffix(suffix):
                 self.perror(
-                    f'"{suffix}" is not a valid {adjective}ed file suffix')
-                return
+                    f'error: "{suffix}" is not a valid {adjective}ed file suffix'
+                )
+                return False
 
             if encrypt:
                 self.instance.encrypted_file_suffix = suffix
@@ -243,11 +303,19 @@ class SettingsSubMenu(BaseMenu):
             ok, message = self.instance.save_settings()
             if ok:
                 self.psuccess('settings saved')
+                return True
             else:
                 self.perror(f'error saving settings:\n  {message}')
+                return False
+        else:
+            self.perror('error: suffix cannot be empty')
+            return False
 
     def postcmd(self, stop, line):
         if stop:
+            # Quit immediately if user wants to go back.
+            if line.command.strip() not in ['b', 'q']:
+                self.read_input('\nPress Enter to continue...')
             return True
 
         self.read_input('\nPress Enter to continue...')
@@ -258,32 +326,77 @@ class SettingsSubMenu(BaseMenu):
         """Go back to the Home menu."""
         return True
 
-    def do_q(self, args):
-        """Go back to the Home menu."""
-        return self.do_b(args)
+    def do_s(self, args: str):
+        """Set Directory"""
+        path = args.strip() if args else ''
+
+        if not path:
+            self.pwarning(
+                'HINT: Press\n  <TAB> to browse and autocomplete\n  "../" + <TAB> to browse directories one level up\n  "." to select the current directory'
+            )
+            try:
+                path = self.read_input(
+                    prompt='Select a new working directory: ',
+                    completer=self.complete_s)
+            except (EOFError, KeyboardInterrupt):
+                self.pwarning('\nAborted.')
+                return False
+
+        path = path.strip()
+        if not path:
+            return False
+
+        new_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
+
+        if not new_path.exists():
+            self.perror(f"Error: Path '{new_path}' does not exists.")
+            return False
+        elif not new_path.is_dir():
+            self.perror(f"Error: '{new_path}' is not a directory")
+            return False
+        else:
+            self.working_directory = new_path
+            os.chdir(str(new_path))
+
+        if self.parent:
+            self.parent.working_directory = new_path
+
+        return True
+
+    def complete_s(self, *args, **kwargs):
+        """Only show directories."""
+        text, line, begidx, endidx = args[-4:]
+
+        directory_filter = lambda p: pathlib.Path(p).is_dir()
+        return self.path_complete(text,
+                                  line,
+                                  begidx,
+                                  endidx,
+                                  path_filter=directory_filter)
 
     def do_o(self, args):
         """Use system's OpenSSL/LibreSSL binary."""
         self.poutput('DUMMY select OpenSSL, exclude Cryptography...')
+        return True
 
     def do_p(self, args):
         """Use Python Cryptography library."""
+        return True
 
     def do_a(self, args):
-        """About."""
+        """About"""
         self.poutput('DUMMY about, just print on screen...')
-
-    def do_d(self, args):
-        """Directory depth."""
-        self.poutput('Must be an int >= 0')
+        return True
 
     def do_ds(self, args):
-        """Change decrypted file suffix."""
+        """Set decrypted suffix"""
         self._change_suffix(encrypt=False)
 
     def do_es(self, args):
-        """Change encrypted file suffix."""
+        """Set encrypted suffix"""
         self._change_suffix(encrypt=True)
+
+    do_q = do_b
 
 
 class CryptoSubMenu(BaseMenu):
@@ -292,31 +405,35 @@ class CryptoSubMenu(BaseMenu):
                  scrambler,
                  encrypt: bool = True,
                  working_directory: pathlib.Path = pathlib.Path.cwd()):
-        super().__init__(
-            allowed_commands={'c', 'b', 'm', 'q', 'f', 'd', 'help'},
-            scrambler=scrambler,
-        )
+        super().__init__(allowed_commands=['1', '2', '3', '4'],
+                         scrambler=scrambler,
+                         submenu_type='encrypt' if encrypt else 'decrypt',
+                         commands_that_clear_screen=['1', '2', '3', '4'])
 
         self.working_directory = working_directory
 
-        if encrypt:
-            # Hack to override the docstring.
-            self.do_c.__func__.__doc__ = 'Encrypt dataframe columns.'
-            self.do_d.__func__.__doc__ = 'Encrypt directory.'
-            self.do_f.__func__.__doc__ = 'Encrypt file.'
-            self.do_m.__func__.__doc__ = 'Encrypt message.'
-        else:
-            self.do_c.__func__.__doc__ = 'Decrypt dataframe columns.'
-            self.do_d.__func__.__doc__ = 'Decrypt directory.'
-            self.do_f.__func__.__doc__ = 'Decrypt file.'
-            self.do_m.__func__.__doc__ = 'Decrypt message.'
+        # Hack to override the docstring.
+        self.do_c.__func__.__doc__ = 'Columns in a DataFrame'
+        self.do_d.__func__.__doc__ = 'All files in directory'
+        self.do_f.__func__.__doc__ = 'A file'
+        self.do_m.__func__.__doc__ = 'A message'
 
         self.prompt = '> '
         self.encrypt = encrypt
         self._from_home_menu = False
 
+    def clear_and_show_help(self):
+        super().clear_and_show_help(
+            menu_name='Encrypt' if self.encrypt else 'Decrypt',
+            question=
+            f'What would you like to {"encrypt" if self.encrypt else "decrypt"}?'
+        )
+
     def postcmd(self, stop, line):
         if stop:
+            # Quit immediately if user wants to go back.
+            if line.command.strip() not in ['b', 'q']:
+                self.read_input('\nPress Enter to continue...')
             return True
 
         self.read_input('\nPress Enter to continue...')
@@ -324,17 +441,13 @@ class CryptoSubMenu(BaseMenu):
         return stop
 
     def do_b(self, args):
-        """Go back to the Home menu."""
+        """Go back to the Home menu"""
         return True
-
-    def do_q(self, args):
-        """Go back to the Home menu."""
-        return self.do_b(args)
 
     def do_m(self, args):
         """Cipher/Decypher message."""
         wf = workflow.MessageCryptoWorkflow(menu_instance=self)
-        wf.start()
+        return wf.start()
 
     def do_f(self, args):
         """Cipher/Decypher files."""
@@ -342,7 +455,7 @@ class CryptoSubMenu(BaseMenu):
             menu_instance=self,
             resource_type='file',
             working_directory=self.working_directory)
-        wf.start(args)
+        return wf.start(args)
 
     def complete_f(self, text, line, begidx, endidx):
         """Autocomplete paths."""
@@ -358,7 +471,7 @@ class CryptoSubMenu(BaseMenu):
             menu_instance=self,
             resource_type='directory',
             working_directory=self.working_directory)
-        wf.start(args)
+        return wf.start(args)
 
     def complete_d(self, text, line, begidx, endidx):
         """Autocomplete paths."""
@@ -370,6 +483,14 @@ class CryptoSubMenu(BaseMenu):
 
     def do_c(self, args):
         """Cipher/Decypher dataframe columns."""
+        self.pwarning('Feature coming soon')
+
+    # Aliases.
+    do_1 = do_m
+    do_2 = do_f
+    do_3 = do_d
+    do_4 = do_c
+    do_q = do_b
 
 
 class ScramblerAppHome(BaseMenu):
@@ -377,22 +498,42 @@ class ScramblerAppHome(BaseMenu):
 
     def __init__(self, scrambler):
         super().__init__(
-            allowed_commands={'s', 'e', 'd', 'q', 'cd', 'help'},
+            allowed_commands=['e', 'd', 'ls', 'pwd', 's', 'q', 'help'],
             scrambler=scrambler,
-        )
+            submenu_type='home',
+            commands_that_clear_screen=['pwd', 'ls'])
         self.prompt = '> '
         self.working_directory = pathlib.Path.cwd()
         self.clear_and_show_help()
+        self.commands_that_clear_screen: list[str] = ['pwd', 'ls']
+
+    def clear_and_show_help(self):
+        super().clear_and_show_help('Scrambler App')
 
     def do_q(self, args):
-        """Quit the application."""
+        """Quit"""
         self.psuccess('Goodbye!')
         return True
 
+    def do_pwd(self, args):
+        """Show current directory"""
+        self.poutput(f'Current directory:')
+        self.poutput()
+        self.poutput(f'{self.working_directory}')
+        self.read_input('\nPress Enter to continue...')
+
+    def do_ls(self, args):
+        """List files"""
+        self.poutput(f'Directory listing:')
+        self.poutput()
+        [self.poutput(l) for l in CommonCmd.ls(self.working_directory)]
+        self.read_input('\nPress Enter to continue...')
+
     def do_s(self, args):
-        """Open the settings sub-menu."""
+        """Settings"""
         sub_menu = SettingsSubMenu(
             scrambler=self.scrambler,
+            parent=self,
             working_directory=self.working_directory,
         )
 
@@ -400,49 +541,8 @@ class ScramblerAppHome(BaseMenu):
         # Don't exit this sub-menu unless the user types 'b' (back).
         sub_menu.cmdloop()
 
-    def do_cd(self, args: str):
-        """Set working directory."""
-        path = args.strip() if args else ''
-
-        if not path:
-            self.pwarning(
-                'HINT: Press\n  <TAB> to browse and autocomplete\n  "../" + <TAB> to browse directories one level up\n  "." to select the current directory'
-            )
-            try:
-                path = self.read_input(
-                    prompt='Select a new working directory: ',
-                    completer=self.complete_cd)
-            except (EOFError, KeyboardInterrupt):
-                self.pwarning('\nAborted.')
-                return
-
-        path = path.strip()
-        if not path:
-            return
-
-        new_path: pathlib.Path = pathlib.Path(path).expanduser().resolve()
-
-        if not new_path.exists():
-            self.perror(f"Error: Path '{new_path}' does not exists.")
-        elif not new_path.is_dir():
-            self.perror(f"Error: '{new_path}' is not a directory")
-        else:
-            self.working_directory = new_path
-            os.chdir(str(new_path))
-
-    def complete_cd(self, *args, **kwargs):
-        """Only show directories."""
-        text, line, begidx, endidx = args[-4:]
-
-        directory_filter = lambda p: pathlib.Path(p).is_dir()
-        return self.path_complete(text,
-                                  line,
-                                  begidx,
-                                  endidx,
-                                  path_filter=directory_filter)
-
     def do_e(self, args):
-        """Open the encryption sub-menu."""
+        """Encrypt"""
         sub_menu = CryptoSubMenu(
             scrambler=self.scrambler,
             encrypt=True,
@@ -454,7 +554,7 @@ class ScramblerAppHome(BaseMenu):
         sub_menu.cmdloop()
 
     def do_d(self, args):
-        """Open the decryption sub-menu."""
+        """Decrypt"""
         sub_menu = CryptoSubMenu(
             scrambler=self.scrambler,
             encrypt=False,

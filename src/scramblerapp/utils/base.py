@@ -24,6 +24,8 @@ from os.path import exists, isdir
 from random import randrange
 from typing import Type, Union
 
+from tqdm import tqdm
+
 from ..dircrawler.crawler import Crawler
 from ..dircrawler.filemodder import FileModder
 from .encryption import OpenSSLEncyptor as ossl
@@ -51,7 +53,6 @@ class Scrambler:
             'decrypt': ['d', 'NAKED']
         }
     ) -> dict:
-
         result = {'status': None, 'message': None}
 
         if decrypt:
@@ -112,20 +113,19 @@ class Scrambler:
 
         return result
 
-    def encrypt_all_files(
-        self,
-        password: str,
-        wd: str,
-        extension: Union[str, Type[None]] = None,
-        decrypt: bool = False,
-        keep_org: bool = False,
-        naked: bool = False,
-        tag_options: dict[list[str]] = {
-            'encrypt': ['openssl-c'],
-            'decrypt': ['d', 'NAKED']
-        }
-    ) -> dict:
-        filepaths = Crawler.get_files(wd, extension=extension)
+    def encrypt_all_files(self,
+                          password: str,
+                          wd: str,
+                          extension: Union[str, Type[None]] = None,
+                          decrypt: bool = False,
+                          keep_org: bool = False,
+                          naked: bool = False,
+                          tag_options: dict[list[str]] = {
+                              'encrypt': ['openssl-c'],
+                              'decrypt': ['d', 'NAKED']
+                          },
+                          depth: int = 1) -> dict:
+        filepaths = Crawler.get_files(wd, extension=extension, depth=depth)
         if len(filepaths) <= 0:
             return {
                 'status': 400,
@@ -140,7 +140,7 @@ class Scrambler:
                               keep_org=keep_org,
                               naked=naked,
                               tag_options=tag_options)['message']
-            for filepath in filepaths
+            for filepath in tqdm(filepaths, desc='Progress')
         ]
 
         return {
