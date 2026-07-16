@@ -24,6 +24,8 @@ from os.path import exists, isdir
 from random import randrange
 from typing import Type, Union
 
+from tqdm import tqdm
+
 from ..dircrawler.crawler import Crawler
 from ..dircrawler.filemodder import FileModder
 from .encryption import OpenSSLEncyptor as ossl
@@ -51,7 +53,6 @@ class Scrambler:
             'decrypt': ['d', 'NAKED']
         }
     ) -> dict:
-
         result = {'status': None, 'message': None}
 
         if decrypt:
@@ -139,7 +140,7 @@ class Scrambler:
                               keep_org=keep_org,
                               naked=naked,
                               tag_options=tag_options)['message']
-            for filepath in filepaths
+            for filepath in tqdm(filepaths, desc='Progress')
         ]
 
         return {

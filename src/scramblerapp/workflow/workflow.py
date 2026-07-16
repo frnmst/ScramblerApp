@@ -268,6 +268,10 @@ class FileCryptoWorkflow(Workflow):
                 if not password:
                     return False
 
+                self.menu._clear_terminal()
+                self.print_option_title()
+                # tqdm shows progress here.
+
                 # Mock:
                 #   result = {'status': 200, 'message': 'OK', 'output': ['ok 0', 'ok 1']}
                 result = self.menu.scrambler.encrypt_all_files(
